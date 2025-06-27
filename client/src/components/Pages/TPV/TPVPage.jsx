@@ -1,8 +1,10 @@
 import { useState, useEffect } from "react";
 import { ShoppingCartIcon, PlusIcon, TrashIcon, MagnifyingGlassIcon, CheckCircleIcon, UserIcon } from '@heroicons/react/24/outline';
-import { useAuth } from "../AuthContext";
+import { useAuth } from "../../../AuthContext";
+import { db } from "../../../firebase";
+import { collection, doc, getDoc, setDoc, addDoc, updateDoc, query, where, getDocs } from "firebase/firestore";
 
-export default function TPVApp() {
+export default function TPVPage() {
   const { usuario, logout } = useAuth();
   const [codigoBarra, setCodigoBarra] = useState("");
   const [producto, setProducto] = useState(null);
@@ -22,18 +24,45 @@ export default function TPVApp() {
     setTotal(nuevoTotal);
   }, [carrito]);
 
+  // Función para refrescar datos del producto
+  const refrescarProducto = async (codigoBarra) => {
+    try {
+      const productosRef = collection(db, "productos");
+      const q = query(productosRef, where("codigoBarra", "==", codigoBarra));
+      const querySnapshot = await getDocs(q);
+      
+      if (!querySnapshot.empty) {
+        const productDoc = querySnapshot.docs[0];
+        const productData = { id: productDoc.id, ...productDoc.data() };
+        return productData;
+      }
+    } catch (error) {
+      console.error("Error al refrescar producto:", error);
+    }
+    return null;
+  };
+
   const buscarProducto = async () => {
     if (!codigoBarra.trim()) return;
 
     try {
-      const response = await fetch(`http://localhost:3000/productos/${codigoBarra}`);
-      if (response.ok) {
-        const data = await response.json();
-        setProducto(data);
+      // Buscar producto en Firestore por codigoBarra
+      const productosRef = collection(db, "productos");
+      const q = query(productosRef, where("codigoBarra", "==", codigoBarra));
+      const querySnapshot = await getDocs(q);
+      
+      if (!querySnapshot.empty) {
+        // Producto encontrado
+        const productDoc = querySnapshot.docs[0];
+        const productData = { id: productDoc.id, ...productDoc.data() };
+        setProducto(productData);
         setNoEncontrado(false);
+        console.log("Producto encontrado:", productData);
       } else {
+        // Producto no encontrado
         setProducto(null);
         setNoEncontrado(true);
+        console.log("Producto no encontrado para código:", codigoBarra);
       }
     } catch (error) {
       console.error("Error al buscar producto:", error);
@@ -44,35 +73,50 @@ export default function TPVApp() {
 
   const agregarProducto = async () => {
     try {
-      const response = await fetch("http://localhost:3000/productos", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          codigo: codigoBarra,
-          ...nuevoProducto,
-          precio: parseFloat(nuevoProducto.precio),
-          stock: parseInt(nuevoProducto.stock),
-        }),
-      });
+      const nuevoProductoData = {
+        codigoBarra: codigoBarra,
+        nombre: nuevoProducto.nombre,
+        precio: parseFloat(nuevoProducto.precio),
+        stock: parseInt(nuevoProducto.stock),
+        fechaCreacion: new Date().toISOString()
+      };
 
-      if (response.ok) {
-        const data = await response.json();
-        setProducto(data);
-        setNoEncontrado(false);
-        setNuevoProducto({ nombre: "", precio: "", stock: "" });
-      }
+      // Agregar producto a Firestore
+      const docRef = await addDoc(collection(db, "productos"), nuevoProductoData);
+      
+      const productData = { id: docRef.id, ...nuevoProductoData };
+      setProducto(productData);
+      setNoEncontrado(false);
+      setNuevoProducto({ nombre: "", precio: "", stock: "" });
+      console.log("Producto agregado:", productData);
     } catch (error) {
       console.error("Error al agregar producto:", error);
+      alert("Error al agregar producto: " + error.message);
     }
   };
 
   const agregarAlCarrito = () => {
     if (!producto || cantidad <= 0) return;
+    
+    // Validar stock disponible
+    if (cantidad > producto.stock) {
+      alert(`Stock insuficiente. Solo hay ${producto.stock} unidades disponibles.`);
+      return;
+    }
 
-    const itemExistente = carrito.find(item => item.codigo === producto.codigo);
+    // Verificar si ya existe en el carrito para validar stock total
+    const itemExistente = carrito.find(item => item.codigoBarra === producto.codigoBarra);
+    const cantidadEnCarrito = itemExistente ? itemExistente.cantidad : 0;
+    const cantidadTotal = cantidadEnCarrito + cantidad;
+
+    if (cantidadTotal > producto.stock) {
+      alert(`Stock insuficiente. Ya tienes ${cantidadEnCarrito} en el carrito. Máximo disponible: ${producto.stock - cantidadEnCarrito}`);
+      return;
+    }
+
     if (itemExistente) {
       setCarrito(carrito.map(item =>
-        item.codigo === producto.codigo
+        item.codigoBarra === producto.codigoBarra
           ? { ...item, cantidad: item.cantidad + cantidad }
           : item
       ));
@@ -87,33 +131,80 @@ export default function TPVApp() {
     setNoEncontrado(false);
   };
 
-  const eliminarDelCarrito = (codigo) => {
-    setCarrito(carrito.filter(item => item.codigo !== codigo));
+  const eliminarDelCarrito = (codigoBarra) => {
+    setCarrito(carrito.filter(item => item.codigoBarra !== codigoBarra));
   };
 
   const procesarVenta = async () => {
     if (carrito.length === 0) return;
 
     try {
-      const response = await fetch("http://localhost:3000/ventas", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          items: carrito,
-          total,
-          fecha: new Date().toISOString(),
-          usuario: usuario?.email || "usuario",
-        }),
-      });
+      // Iniciar transacción para garantizar consistencia
+      const ventaData = {
+        items: carrito.map(item => ({
+          codigoBarra: item.codigoBarra,
+          nombre: item.nombre,
+          precio: item.precio,
+          cantidad: item.cantidad,
+          subtotal: item.precio * item.cantidad
+        })),
+        total: total,
+        fecha: new Date().toISOString(),
+        usuario: usuario?.email || "usuario",
+        timestamp: new Date()
+      };
 
-      if (response.ok) {
-        alert("Venta procesada exitosamente");
-        setCarrito([]);
-        setTotal(0);
+      // Agregar la venta a Firestore
+      const docRef = await addDoc(collection(db, "ventas"), ventaData);
+      console.log("Venta registrada con ID:", docRef.id);
+
+      // Actualizar el stock de cada producto
+      let stockUpdatesSuccessful = 0;
+      for (const item of carrito) {
+        try {
+          // Buscar el documento del producto por codigoBarra
+          const productosRef = collection(db, "productos");
+          const q = query(productosRef, where("codigoBarra", "==", item.codigoBarra));
+          const querySnapshot = await getDocs(q);
+          
+          if (!querySnapshot.empty) {
+            // Obtener el primer documento que coincida
+            const productDoc = querySnapshot.docs[0];
+            const currentData = productDoc.data();
+            const currentStock = currentData.stock;
+            const newStock = currentStock - item.cantidad;
+            
+            // Actualizar stock en Firestore usando el ID del documento
+            const productRef = doc(db, "productos", productDoc.id);
+            await updateDoc(productRef, {
+              stock: newStock
+            });
+            
+            console.log(`✅ Stock actualizado para ${item.nombre}: ${currentStock} -> ${newStock}`);
+            stockUpdatesSuccessful++;
+          } else {
+            console.error(`❌ Producto no encontrado para código: ${item.codigoBarra}`);
+          }
+        } catch (itemError) {
+          console.error(`❌ Error actualizando stock para ${item.nombre}:`, itemError);
+        }
       }
+
+      alert(`✅ Venta procesada exitosamente!\n\n📄 ID: ${docRef.id}\n💰 Total: €${total.toFixed(2)}\n📦 Productos: ${carrito.length}\n📊 Stock actualizado: ${stockUpdatesSuccessful}/${carrito.length}`);
+      setCarrito([]);
+      setTotal(0);
+      
+      // Si hay un producto siendo mostrado, refrescarlo para mostrar el stock actualizado
+      if (producto && codigoBarra === producto.codigoBarra) {
+        const productoActualizado = await refrescarProducto(producto.codigoBarra);
+        if (productoActualizado) {
+          setProducto(productoActualizado);
+        }
+      }
+      
     } catch (error) {
-      console.error("Error al procesar venta:", error);
-      alert("Error al procesar la venta");
+      console.error("❌ Error al procesar venta:", error);
+      alert("❌ Error al procesar la venta: " + error.message);
     }
   };
 
@@ -128,16 +219,8 @@ export default function TPVApp() {
               <h1 className="text-2xl font-bold text-gray-900">TPV Sistema</h1>
             </div>
             <div className="flex items-center space-x-4">
-              <span className="text-sm text-gray-700">
-                Hola, {usuario?.email || "Usuario"}
-              </span>
-              <button
-                onClick={logout}
-                className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
-              >
-                <UserIcon className="h-4 w-4 mr-1" />
-                Cerrar Sesión
-              </button>
+              
+              
             </div>
           </div>
         </div>
@@ -172,7 +255,7 @@ export default function TPVApp() {
             {producto && (
               <div className="bg-white rounded-lg shadow p-6">
                 <h3 className="text-lg font-medium text-gray-900 mb-4">Producto Encontrado</h3>
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+                <div className="grid grid-cols-1 md:grid-cols-5 gap-4 items-end">
                   <div>
                     <label className="block text-sm font-medium text-gray-700">Nombre</label>
                     <p className="mt-1 text-sm text-gray-900">{producto.nombre}</p>
@@ -182,21 +265,41 @@ export default function TPVApp() {
                     <p className="mt-1 text-sm text-gray-900">€{producto.precio}</p>
                   </div>
                   <div>
+                    <label className="block text-sm font-medium text-gray-700">Stock</label>
+                    <p className={`mt-1 text-sm font-medium ${
+                      producto.stock <= 5 ? 'text-red-600' : 
+                      producto.stock <= 10 ? 'text-yellow-600' : 'text-green-600'
+                    }`}>
+                      {producto.stock} unidades
+                    </p>
+                  </div>
+                  <div>
                     <label className="block text-sm font-medium text-gray-700">Cantidad</label>
                     <input
                       type="number"
                       min="1"
+                      max={producto.stock}
                       value={cantidad}
                       onChange={(e) => setCantidad(parseInt(e.target.value) || 1)}
                       className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
                     />
+                    {cantidad > producto.stock && (
+                      <p className="mt-1 text-xs text-red-600">
+                        Stock insuficiente (máximo: {producto.stock})
+                      </p>
+                    )}
                   </div>
                   <button
                     onClick={agregarAlCarrito}
-                    className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+                    disabled={cantidad > producto.stock || producto.stock === 0}
+                    className={`inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white ${
+                      cantidad > producto.stock || producto.stock === 0
+                        ? 'bg-gray-400 cursor-not-allowed'
+                        : 'bg-green-600 hover:bg-green-700'
+                    } focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500`}
                   >
                     <PlusIcon className="h-4 w-4 mr-2" />
-                    Agregar
+                    {producto.stock === 0 ? 'Sin Stock' : 'Agregar'}
                   </button>
                 </div>
               </div>
@@ -254,7 +357,7 @@ export default function TPVApp() {
               <>
                 <div className="space-y-3 mb-6">
                   {carrito.map((item) => (
-                    <div key={item.codigo} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                    <div key={item.codigoBarra} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                       <div className="flex-1">
                         <p className="text-sm font-medium text-gray-900">{item.nombre}</p>
                         <p className="text-xs text-gray-500">
@@ -262,7 +365,7 @@ export default function TPVApp() {
                         </p>
                       </div>
                       <button
-                        onClick={() => eliminarDelCarrito(item.codigo)}
+                        onClick={() => eliminarDelCarrito(item.codigoBarra)}
                         className="p-1 text-red-600 hover:text-red-800"
                       >
                         <TrashIcon className="h-4 w-4" />
