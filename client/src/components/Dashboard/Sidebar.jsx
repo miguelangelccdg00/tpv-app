@@ -25,6 +25,16 @@ const Sidebar = () => {
       path: '/dashboard/inventario',
       name: 'Inventario',
       icon: '📋'
+    },
+    {
+      path: '/dashboard/facturas',
+      name: 'Facturas de Proveedores',
+      icon: '🧾'
+    },
+    {
+      path: '/dashboard/configuracion',
+      name: 'Configuración',
+      icon: '⚙️'
     }
   ];
 

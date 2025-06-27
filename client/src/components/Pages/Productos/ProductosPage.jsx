@@ -10,26 +10,17 @@ import {
   ArrowUpIcon,
   ArrowDownIcon,
   XMarkIcon,
-  ClipboardDocumentListIcon
+  ClipboardDocumentListIcon,
+  ExclamationTriangleIcon
 } from '@heroicons/react/24/outline';
-import { db } from '../../../firebase';
-import { 
-  collection, 
-  getDocs, 
-  addDoc, 
-  updateDoc, 
-  deleteDoc, 
-  doc, 
-  query, 
-  orderBy, 
-  onSnapshot,
-  where
-} from 'firebase/firestore';
+import { useSecureData } from '../../../contexts/SecureDataContext';
 
 const ProductosPage = () => {
+  const { secureOnSnapshot, secureAddDoc, secureUpdateDoc, secureDeleteDoc, diagnosticarSistema } = useSecureData();
   const [productos, setProductos] = useState([]);
   const [categorias, setCategorias] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filtroCategoria, setFiltroCategoria] = useState('todas');
   const [ordenPor, setOrdenPor] = useState('nombre'); // nombre, precio, stock, popularidad
@@ -55,45 +46,38 @@ const ProductosPage = () => {
   const [errors, setErrors] = useState({});
   const [estadisticas, setEstadisticas] = useState({});
 
-  // Cargar productos y categorías en tiempo real
+  // Cargar productos con el contexto seguro
   useEffect(() => {
-    const productosRef = collection(db, 'productos');
-    let q;
+    setLoading(true);
     
-    switch(ordenPor) {
-      case 'precio':
-        q = query(productosRef, orderBy('precio'));
-        break;
-      case 'stock':
-        q = query(productosRef, orderBy('stock', 'desc'));
-        break;
-      default:
-        q = query(productosRef, orderBy('nombre'));
-    }
-    
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const productosData = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
+    // Crear listener seguro SIN ordenamiento (para evitar problemas de índices)
+    // El ordenamiento se hará en el cliente
+    const unsubscribe = secureOnSnapshot('productos', [], (productosData) => {
+      // Ordenar en el cliente según la preferencia
+      let productosOrdenados = [...productosData];
       
-      setProductos(productosData);
+      if (ordenPor === 'precio') {
+        productosOrdenados.sort((a, b) => (a.precio || 0) - (b.precio || 0));
+      } else if (ordenPor === 'stock') {
+        productosOrdenados.sort((a, b) => (b.stock || 0) - (a.stock || 0));
+      } else {
+        productosOrdenados.sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
+      }
+      
+      setProductos(productosOrdenados);
+      setLoading(false);
+      setError(null);
       
       // Extraer categorías únicas
-      const categoriasUnicas = [...new Set(productosData.map(p => p.categoria).filter(Boolean))];
+      const categoriasUnicas = [...new Set(productosOrdenados.map(p => p.categoria).filter(Boolean))];
       setCategorias(categoriasUnicas);
       
       // Calcular estadísticas
-      calcularEstadisticas(productosData);
-      
-      setLoading(false);
-    }, (error) => {
-      console.error('Error al cargar productos:', error);
-      setLoading(false);
+      calcularEstadisticas(productosOrdenados);
     });
 
-    return () => unsubscribe();
-  }, [ordenPor]);
+    return unsubscribe;
+  }, [ordenPor, secureOnSnapshot]);
 
   // Calcular beneficio y margen
   const calcularBeneficio = (precioCosto, precioVenta, iva) => {
@@ -211,11 +195,9 @@ const ProductosPage = () => {
       };
 
       if (modalTipo === 'agregar') {
-        productData.fechaCreacion = new Date().toISOString();
-        await addDoc(collection(db, 'productos'), productData);
+        await secureAddDoc('productos', productData);
       } else {
-        const docRef = doc(db, 'productos', productoEditando.id);
-        await updateDoc(docRef, productData);
+        await secureUpdateDoc('productos', productoEditando.id, productData);
       }
 
       cerrarModal();
@@ -230,7 +212,7 @@ const ProductosPage = () => {
     if (!confirm(`¿Estás seguro de eliminar el producto "${producto.nombre}"?`)) return;
 
     try {
-      await deleteDoc(doc(db, 'productos', producto.id));
+      await secureDeleteDoc('productos', producto.id);
     } catch (error) {
       console.error('Error al eliminar producto:', error);
       alert('Error al eliminar el producto: ' + error.message);
@@ -330,6 +312,27 @@ const ProductosPage = () => {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
+        <p className="ml-4 text-gray-600">Cargando productos...</p>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="bg-red-50 border border-red-200 rounded-md p-4">
+        <div className="flex">
+          <ExclamationTriangleIcon className="h-5 w-5 text-red-400 mr-2" />
+          <div>
+            <h3 className="text-red-800 font-medium">Error al cargar productos</h3>
+            <p className="text-red-700 mt-1">{error}</p>
+            <button 
+              onClick={() => window.location.reload()} 
+              className="mt-2 px-3 py-1 bg-red-600 text-white rounded text-sm hover:bg-red-700"
+            >
+              Recargar página
+            </button>
+          </div>
+        </div>
       </div>
     );
   }

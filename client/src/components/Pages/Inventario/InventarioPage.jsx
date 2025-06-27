@@ -8,20 +8,10 @@ import {
   CheckCircleIcon,
   XMarkIcon
 } from '@heroicons/react/24/outline';
-import { db } from '../../../firebase';
-import { 
-  collection, 
-  getDocs, 
-  addDoc, 
-  updateDoc, 
-  deleteDoc, 
-  doc, 
-  query, 
-  orderBy, 
-  onSnapshot 
-} from 'firebase/firestore';
+import { useSecureData } from '../../../contexts/SecureDataContext';
 
 const InventarioPage = () => {
+  const { secureOnSnapshot, secureAddDoc, secureUpdateDoc, secureDeleteDoc, diagnosticarSistema } = useSecureData();
   const [productos, setProductos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -39,25 +29,23 @@ const InventarioPage = () => {
   });
   const [errors, setErrors] = useState({});
 
-  // Cargar productos en tiempo real
+  // Cargar productos en tiempo real con contexto seguro
   useEffect(() => {
-    const productosRef = collection(db, 'productos');
-    const q = query(productosRef, orderBy('nombre'));
+    setLoading(true);
     
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const productosData = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-      setProductos(productosData);
-      setLoading(false);
-    }, (error) => {
-      console.error('Error al cargar productos:', error);
+    // Crear listener seguro para productos
+    const unsubscribe = secureOnSnapshot('productos', [], (productosData) => {
+      // Ordenar por nombre en el cliente
+      const productosOrdenados = productosData.sort((a, b) => 
+        (a.nombre || '').localeCompare(b.nombre || '')
+      );
+      
+      setProductos(productosOrdenados);
       setLoading(false);
     });
 
-    return () => unsubscribe();
-  }, []);
+    return unsubscribe;
+  }, [secureOnSnapshot]);
 
   // Filtrar productos
   const productosFiltrados = productos.filter(producto => {
@@ -136,7 +124,7 @@ const InventarioPage = () => {
     if (!confirm(`¿Estás seguro de eliminar el producto "${producto.nombre}"?`)) return;
 
     try {
-      await deleteDoc(doc(db, 'productos', producto.id));
+      await secureDeleteDoc('productos', producto.id);
     } catch (error) {
       console.error('Error al eliminar producto:', error);
       alert('Error al eliminar el producto: ' + error.message);
