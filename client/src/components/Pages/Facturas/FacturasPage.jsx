@@ -1207,7 +1207,7 @@ const FacturasPage = () => {
 
   if (cargando) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="flex items-center justify-center h-64">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
           <p className="mt-4 text-gray-600">Cargando facturas...</p>
@@ -1218,7 +1218,7 @@ const FacturasPage = () => {
 
   if (!usuario) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="flex items-center justify-center h-64">
         <div className="text-center">
           <ExclamationTriangleIcon className="h-12 w-12 text-gray-400 mx-auto mb-4" />
           <h3 className="text-lg font-medium text-gray-900 mb-2">Acceso denegado</h3>
@@ -1229,19 +1229,9 @@ const FacturasPage = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 p-6">
+    <div className="space-y-6">
       <div className="max-w-7xl mx-auto">
-        {/* Header */}
-        <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center">
-              <DocumentTextIcon className="h-10 w-10 text-blue-600 mr-4" />
-              <div>
-                <h1 className="text-2xl font-bold text-gray-900">Facturas de Proveedores</h1>
-                <p className="text-gray-600">Gestiona las facturas de compra y actualiza el inventario automáticamente</p>
-              </div>
-            </div>
-            <div className="flex space-x-3">
+        <div className="flex space-x-3 mb-6">
               <button
                 onClick={() => {
                   console.log('🐛 DEBUG INFO:');
@@ -1289,8 +1279,8 @@ const FacturasPage = () => {
                 }}
                 className="flex items-center px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
               >
-                <CubeIcon className="h-5 w-5 mr-2" />
-                Crear Colección
+                <WrenchScrewdriverIcon className="h-5 w-5 mr-2" />
+                Crear Colecciones
               </button>
               <button
                 onClick={() => setMostrarConfiguracionEmpresa(true)}
@@ -1307,8 +1297,6 @@ const FacturasPage = () => {
                 Nueva Factura
               </button>
             </div>
-          </div>
-        </div>
 
         {error && (
           <div className="bg-red-50 border border-red-200 rounded-md p-4 mb-6">

@@ -3,12 +3,15 @@ import { AuthProvider, useAuth } from './AuthContext';
 import { SecureDataProvider } from './contexts/SecureDataContext';
 import LoginForm from './components/LoginForm';
 import Dashboard from './components/Dashboard/Dashboard';
+import DashboardHome from './components/Pages/DashboardHome';
 import TPVPage from './components/Pages/TPV/TPVPage';
 import ProductosPage from './components/Pages/Productos/ProductosPage';
 import VentasPage from './components/Pages/Ventas/VentasPage';
 import InventarioPage from './components/Pages/Inventario/InventarioPage';
 import FacturasPage from './components/Pages/Facturas/FacturasPage';
 import ConfiguracionPage from './components/Pages/Configuracion/ConfiguracionPage';
+import PerfilPage from './components/Pages/Perfil/PerfilPage';
+import AyudaPage from './components/Pages/Ayuda/AyudaPage';
 
 function AppContent() {
   const { usuario, loading } = useAuth();
@@ -37,13 +40,15 @@ function AppContent() {
                 <Dashboard />
               </SecureDataProvider>
             }>
-              <Route index element={<Navigate to="/dashboard/tpv" replace />} />
+              <Route index element={<DashboardHome />} />
               <Route path="tpv" element={<TPVPage />} />
               <Route path="productos" element={<ProductosPage />} />
               <Route path="ventas" element={<VentasPage />} />
               <Route path="inventario" element={<InventarioPage />} />
               <Route path="facturas" element={<FacturasPage />} />
               <Route path="configuracion" element={<ConfiguracionPage />} />
+              <Route path="perfil" element={<PerfilPage />} />
+              <Route path="ayuda" element={<AyudaPage />} />
             </Route>
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </>
