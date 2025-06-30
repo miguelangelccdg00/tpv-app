@@ -13,7 +13,17 @@ import {
   PlusIcon,
   XMarkIcon,
   SparklesIcon,
-  DocumentArrowDownIcon
+  DocumentArrowDownIcon,
+  PencilIcon,
+  Cog6ToothIcon,
+  PhotoIcon,
+  BuildingStorefrontIcon,
+  PhoneIcon,
+  EnvelopeIcon,
+  GlobeAltIcon,
+  IdentificationIcon,
+  PaintBrushIcon,
+  DocumentDuplicateIcon
 } from '@heroicons/react/24/outline';
 import { useAuth } from '../../../AuthContext';
 import { useSecureData } from '../../../contexts/SecureDataContext';
@@ -39,13 +49,30 @@ const FacturasPage = () => {
   const [archivoPreview, setArchivoPreview] = useState(null);
   const [productosExtraidos, setProductosExtraidos] = useState([]); // Nuevo estado para productos extraídos
   const [mostrarProductosExtraidos, setMostrarProductosExtraidos] = useState(false); // Nuevo estado para mostrar preview
+  // Estados para editar y eliminar facturas
+  const [facturaEditando, setFacturaEditando] = useState(null);
+  const [mostrarConfirmacionEliminar, setMostrarConfirmacionEliminar] = useState(null);
+  const [eliminandoFactura, setEliminandoFactura] = useState(false);
+  
+  // Estados para configuración de empresa
+  const [mostrarConfiguracionEmpresa, setMostrarConfiguracionEmpresa] = useState(false);
+  const [guardandoConfiguracion, setGuardandoConfiguracion] = useState(false);
+  const [logoPreview, setLogoPreview] = useState(null);
+  
   const [datosEmpresa, setDatosEmpresa] = useState({
     nombre: 'Tu Empresa S.L.',
     direccion: 'Calle Principal 123',
     ciudad: 'Ciudad, CP 12345',
+    codigoPostal: '12345',
     telefono: '+34 123 456 789',
     email: 'info@tuempresa.com',
-    logo: null
+    web: 'www.tuempresa.com',
+    cif: 'B-12345678',
+    logo: null,
+    colorPrimario: '#2563eb', // Azul por defecto
+    colorSecundario: '#64748b', // Gris por defecto
+    mostrarLogo: true,
+    pieFactura: 'Gracias por confiar en nosotros'
   });
 
   // Estado del formulario de nueva factura
@@ -70,6 +97,7 @@ const FacturasPage = () => {
     if (usuario) {
       cargarFacturas();
       cargarProductos();
+      cargarConfiguracionEmpresa();
     }
   }, [usuario]);
 
@@ -136,106 +164,215 @@ const FacturasPage = () => {
   // Función para generar factura personalizada en PDF
   const generarFacturaPDF = (factura) => {
     console.log('📄 Generando factura PDF personalizada:', factura);
+    console.log('🏢 Usando configuración de empresa:', datosEmpresa);
     
     const doc = new jsPDF();
     
-    // Configuración de fuentes y colores
+    // Función auxiliar para convertir hex a RGB
+    const hexToRgb = (hex) => {
+      const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+      return result ? {
+        r: parseInt(result[1], 16),
+        g: parseInt(result[2], 16),
+        b: parseInt(result[3], 16)
+      } : { r: 37, g: 99, b: 235 }; // Azul por defecto
+    };
+    
+    const colorPrimario = hexToRgb(datosEmpresa.colorPrimario);
+    const colorSecundario = hexToRgb(datosEmpresa.colorSecundario);
+    
+    // Configuración de fuentes
     doc.setFont('helvetica');
     
-    // Encabezado de la empresa
-    doc.setFontSize(20);
-    doc.setTextColor(44, 62, 80);
-    doc.text(datosEmpresa.nombre, 20, 30);
+    // ENCABEZADO DE LA EMPRESA
+    // Rectángulo de fondo para el encabezado
+    doc.setFillColor(colorPrimario.r, colorPrimario.g, colorPrimario.b);
+    doc.rect(0, 0, 210, 35, 'F');
     
-    doc.setFontSize(10);
-    doc.setTextColor(100, 100, 100);
-    doc.text(datosEmpresa.direccion, 20, 40);
-    doc.text(datosEmpresa.ciudad, 20, 46);
-    doc.text(`Tel: ${datosEmpresa.telefono}`, 20, 52);
-    doc.text(`Email: ${datosEmpresa.email}`, 20, 58);
+    // Logo de la empresa (si existe y está habilitado)
+    if (datosEmpresa.mostrarLogo && logoPreview) {
+      try {
+        doc.addImage(logoPreview, 'JPEG', 15, 8, 20, 20);
+        console.log('✅ Logo agregado al PDF');
+      } catch (error) {
+        console.warn('⚠️ Error agregando logo al PDF:', error);
+      }
+    }
     
-    // Título FACTURA
-    doc.setFontSize(24);
-    doc.setTextColor(231, 76, 60);
-    doc.text('FACTURA', 140, 30);
+    // Nombre de la empresa (ajustar posición si hay logo)
+    const nombreEmpresaX = (datosEmpresa.mostrarLogo && logoPreview) ? 40 : 20;
+    doc.setFontSize(22);
+    doc.setTextColor(255, 255, 255); // Blanco
+    doc.setFont('helvetica', 'bold');
+    doc.text(datosEmpresa.nombre, nombreEmpresaX, 20);
+    
+    // Información de contacto de la empresa
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(255, 255, 255);
+    
+    let yPos = 28;
+    if (datosEmpresa.direccion) {
+      doc.text(`${datosEmpresa.direccion}, ${datosEmpresa.ciudad} ${datosEmpresa.codigoPostal}`, nombreEmpresaX, yPos);
+    }
+    
+    // Información de contacto en línea horizontal
+    let contactoInfo = [];
+    if (datosEmpresa.telefono) contactoInfo.push(`Tel: ${datosEmpresa.telefono}`);
+    if (datosEmpresa.email) contactoInfo.push(`Email: ${datosEmpresa.email}`);
+    if (datosEmpresa.web) contactoInfo.push(`Web: ${datosEmpresa.web}`);
+    if (datosEmpresa.cif) contactoInfo.push(`CIF: ${datosEmpresa.cif}`);
+    
+    if (contactoInfo.length > 0) {
+      doc.text(contactoInfo.join(' | '), nombreEmpresaX, 32);
+    }
+    
+    // TÍTULO FACTURA (lado derecho)
+    doc.setFontSize(28);
+    doc.setTextColor(colorPrimario.r, colorPrimario.g, colorPrimario.b);
+    doc.setFont('helvetica', 'bold');
+    doc.text('FACTURA', 140, 50);
     
     // Información de la factura
-    doc.setFontSize(10);
-    doc.setTextColor(0, 0, 0);
-    doc.text(`Número: ${factura.numeroFactura}`, 140, 45);
-    doc.text(`Fecha: ${new Date(factura.fecha).toLocaleDateString('es-ES')}`, 140, 52);
-    doc.text(`Proveedor: ${factura.proveedor}`, 140, 59);
+    doc.setFontSize(11);
+    doc.setTextColor(colorSecundario.r, colorSecundario.g, colorSecundario.b);
+    doc.setFont('helvetica', 'normal');
     
-    // Línea separadora
-    doc.setDrawColor(200, 200, 200);
-    doc.line(20, 70, 190, 70);
+    // Caja de información de factura (más grande para evitar desbordamiento)
+    doc.setDrawColor(colorSecundario.r, colorSecundario.g, colorSecundario.b);
+    doc.setLineWidth(0.5);
+    doc.rect(120, 55, 70, 30); // Caja más ancha y alta
+    
+    doc.text(`N°: ${factura.numeroFactura}`, 122, 62);
+    doc.text(`Fecha: ${new Date(factura.fecha).toLocaleDateString('es-ES')}`, 122, 68);
+    
+    // Proveedor con manejo de texto largo
+    const proveedorTexto = `Proveedor: ${factura.proveedor}`;
+    if (proveedorTexto.length > 35) {
+      // Dividir en dos líneas si es muy largo
+      const palabras = factura.proveedor.split(' ');
+      let linea1 = 'Proveedor: ';
+      let linea2 = '';
+      let longitudLinea1 = linea1.length;
+      
+      for (let palabra of palabras) {
+        if (longitudLinea1 + palabra.length + 1 <= 32) {
+          linea1 += palabra + ' ';
+          longitudLinea1 += palabra.length + 1;
+        } else {
+          linea2 += palabra + ' ';
+        }
+      }
+      
+      doc.text(linea1.trim(), 122, 74);
+      if (linea2.trim()) {
+        doc.text(linea2.trim(), 122, 80);
+      }
+    } else {
+      doc.text(proveedorTexto, 122, 74);
+    }
+    
+    // SECCIÓN DE PRODUCTOS
+    // Línea separadora decorativa
+    doc.setDrawColor(colorPrimario.r, colorPrimario.g, colorPrimario.b);
+    doc.setLineWidth(1);
+    doc.line(20, 95, 190, 95); // Movido más abajo para dar espacio
     
     // Encabezados de tabla
-    doc.setFontSize(10);
-    doc.setTextColor(44, 62, 80);
+    doc.setFontSize(11);
+    doc.setTextColor(255, 255, 255);
     doc.setFont('helvetica', 'bold');
-    doc.text('Código', 20, 85);
-    doc.text('Producto', 50, 85);
-    doc.text('Cant.', 120, 85);
-    doc.text('Precio Unit.', 140, 85);
-    doc.text('Total', 170, 85);
     
-    // Línea bajo encabezados
-    doc.line(20, 88, 190, 88);
+    // Fondo de encabezados
+    doc.setFillColor(colorPrimario.r, colorPrimario.g, colorPrimario.b);
+    doc.rect(20, 100, 170, 8, 'F'); // Movido más abajo
+    
+    doc.text('Código', 22, 106);
+    doc.text('Producto', 55, 106);
+    doc.text('Cant.', 125, 106);
+    doc.text('Precio Unit.', 140, 106);
+    doc.text('Total', 175, 106);
     
     // Productos
     doc.setFont('helvetica', 'normal');
-    doc.setTextColor(0, 0, 0);
-    let yPos = 100;
+    doc.setTextColor(50, 50, 50);
+    doc.setFontSize(10);
+    let yPosProductos = 115; // Movido más abajo
+    let filaColor = true;
     
     factura.productos.forEach((producto, index) => {
       const total = producto.cantidad * producto.precioUnitario;
       
-      doc.text(producto.codigo || '-', 20, yPos);
+      // Alternar color de fondo para las filas
+      if (filaColor) {
+        doc.setFillColor(245, 245, 245);
+        doc.rect(20, yPosProductos - 5, 170, 7, 'F');
+      }
+      filaColor = !filaColor;
       
-      // Nombre del producto (máximo 25 caracteres)
-      const nombreCorto = producto.nombre.length > 25 
-        ? producto.nombre.substring(0, 25) + '...' 
+      // Datos del producto
+      doc.text((producto.codigo || '-').substring(0, 12), 22, yPosProductos);
+      
+      // Nombre del producto (con salto de línea si es muy largo)
+      const nombreCorto = producto.nombre.length > 30 
+        ? producto.nombre.substring(0, 30) + '...' 
         : producto.nombre;
-      doc.text(nombreCorto, 50, yPos);
+      doc.text(nombreCorto, 55, yPosProductos);
       
-      doc.text(producto.cantidad.toString(), 120, yPos);
-      doc.text(`€${producto.precioUnitario.toFixed(2)}`, 140, yPos);
-      doc.text(`€${total.toFixed(2)}`, 170, yPos);
+      doc.text(producto.cantidad.toString(), 125, yPosProductos);
+      doc.text(`€${producto.precioUnitario.toFixed(2)}`, 140, yPosProductos);
+      doc.text(`€${total.toFixed(2)}`, 175, yPosProductos);
       
-      yPos += 8;
+      yPosProductos += 8;
       
       // Nueva página si es necesario
-      if (yPos > 250) {
+      if (yPosProductos > 250) {
         doc.addPage();
-        yPos = 30;
+        yPosProductos = 30;
+        filaColor = true;
       }
     });
     
-    // Total general
-    yPos += 10;
-    doc.setDrawColor(200, 200, 200);
-    doc.line(120, yPos - 5, 190, yPos - 5);
+    // TOTAL GENERAL
+    yPosProductos += 10;
+    
+    // Línea separadora antes del total
+    doc.setDrawColor(colorPrimario.r, colorPrimario.g, colorPrimario.b);
+    doc.setLineWidth(1);
+    doc.line(130, yPosProductos - 5, 190, yPosProductos - 5);
+    
+    // Caja de total
+    doc.setFillColor(colorPrimario.r, colorPrimario.g, colorPrimario.b);
+    doc.rect(130, yPosProductos, 60, 12, 'F');
     
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(12);
-    doc.setTextColor(231, 76, 60);
-    doc.text('TOTAL:', 140, yPos);
-    doc.text(`€${factura.total.toFixed(2)}`, 170, yPos);
+    doc.setFontSize(14);
+    doc.setTextColor(255, 255, 255);
+    doc.text('TOTAL:', 135, yPosProductos + 8);
+    doc.text(`€${factura.total.toFixed(2)}`, 170, yPosProductos + 8);
     
-    // Pie de página
+    // PIE DE PÁGINA
     doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.setTextColor(colorSecundario.r, colorSecundario.g, colorSecundario.b);
+    
+    // Mensaje personalizable
+    if (datosEmpresa.pieFactura) {
+      doc.text(datosEmpresa.pieFactura, 20, 275);
+    }
+    
+    // Información de generación
     doc.setFontSize(8);
-    doc.setTextColor(100, 100, 100);
-    doc.text('Factura generada automáticamente', 20, 280);
-    doc.text(`Generada el ${new Date().toLocaleDateString('es-ES')} por ${datosEmpresa.nombre}`, 20, 286);
+    doc.setTextColor(150, 150, 150);
+    doc.text(`Factura generada automáticamente el ${new Date().toLocaleDateString('es-ES')} a las ${new Date().toLocaleTimeString('es-ES')}`, 20, 285);
+    doc.text(`Sistema TPV - ${datosEmpresa.nombre}`, 20, 290);
     
     // Descargar PDF
     const nombreArchivo = `Factura_${factura.numeroFactura}_${factura.proveedor.replace(/\s+/g, '_')}.pdf`;
     doc.save(nombreArchivo);
     
-    console.log('✅ PDF generado y descargado:', nombreArchivo);
-    alert(`✅ Factura PDF generada exitosamente!\n\n📁 Archivo: ${nombreArchivo}\n\n💡 El archivo se ha descargado automáticamente.`);
+    console.log('✅ PDF personalizado generado y descargado:', nombreArchivo);
+    alert(`✅ Factura PDF personalizada generada!\n\n📁 Archivo: ${nombreArchivo}\n🎨 Con el diseño de ${datosEmpresa.nombre}\n${logoPreview ? '🖼️ Logo incluido' : ''}\n\n💡 El archivo se ha descargado automáticamente.`);
   };
 
   const cargarFacturas = async () => {
@@ -292,6 +429,121 @@ const FacturasPage = () => {
       console.error('❌ Error cargando productos:', error);
       setError(`Error al cargar productos: ${error.message}`);
     }
+  };
+
+  // Funciones para configuración de empresa
+  const cargarConfiguracionEmpresa = async () => {
+    try {
+      console.log('🏢 Cargando configuración de empresa...');
+      
+      const configuracionData = await secureGetDocs('configuracion_empresa', []);
+      
+      if (configuracionData.length > 0) {
+        const config = configuracionData[0];
+        setDatosEmpresa(prevDatos => ({
+          ...prevDatos,
+          ...config
+        }));
+        
+        // Cargar logo si existe
+        if (config.logoBase64) {
+          setLogoPreview(config.logoBase64);
+        }
+        
+        console.log('✅ Configuración de empresa cargada');
+      } else {
+        console.log('ℹ️ No hay configuración guardada, usando valores por defecto');
+      }
+    } catch (error) {
+      console.error('❌ Error cargando configuración de empresa:', error);
+    }
+  };
+
+  const guardarConfiguracionEmpresa = async () => {
+    try {
+      setGuardandoConfiguracion(true);
+      console.log('💾 Guardando configuración de empresa...');
+      
+      // Preparar datos incluyendo el logo en base64 si existe
+      const configuracionData = {
+        nombre: datosEmpresa.nombre.trim(),
+        direccion: datosEmpresa.direccion.trim(),
+        ciudad: datosEmpresa.ciudad.trim(),
+        codigoPostal: datosEmpresa.codigoPostal.trim(),
+        telefono: datosEmpresa.telefono.trim(),
+        email: datosEmpresa.email.trim(),
+        web: datosEmpresa.web.trim(),
+        cif: datosEmpresa.cif.trim(),
+        colorPrimario: datosEmpresa.colorPrimario,
+        colorSecundario: datosEmpresa.colorSecundario,
+        mostrarLogo: datosEmpresa.mostrarLogo,
+        pieFactura: datosEmpresa.pieFactura.trim(),
+        logoBase64: logoPreview, // Guardar el logo en base64
+        usuario: usuario.email,
+        fechaActualizacion: new Date().toISOString()
+      };
+
+      // Verificar si ya existe configuración
+      const configuracionExistente = await secureGetDocs('configuracion_empresa', []);
+      
+      if (configuracionExistente.length > 0) {
+        // Actualizar configuración existente
+        await secureUpdateDoc('configuracion_empresa', configuracionExistente[0].id, configuracionData);
+        console.log('✅ Configuración actualizada');
+      } else {
+        // Crear nueva configuración
+        await secureAddDoc('configuracion_empresa', {
+          ...configuracionData,
+          fechaCreacion: new Date().toISOString()
+        });
+        console.log('✅ Nueva configuración creada');
+      }
+
+      alert('✅ Configuración de empresa guardada correctamente');
+      setMostrarConfiguracionEmpresa(false);
+      
+    } catch (error) {
+      console.error('❌ Error guardando configuración:', error);
+      alert(`❌ Error al guardar la configuración: ${error.message}`);
+    } finally {
+      setGuardandoConfiguracion(false);
+    }
+  };
+
+  const handleLogoChange = (event) => {
+    const archivo = event.target.files[0];
+    if (archivo) {
+      // Validar que sea una imagen
+      if (!archivo.type.startsWith('image/')) {
+        alert('❌ Solo se permiten archivos de imagen (JPG, PNG, etc.)');
+        return;
+      }
+
+      // Validar tamaño (máximo 2MB)
+      if (archivo.size > 2 * 1024 * 1024) {
+        alert('❌ El logo debe ser menor a 2MB');
+        return;
+      }
+
+      // Crear preview del logo
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        setLogoPreview(e.target.result);
+        setDatosEmpresa(prevDatos => ({
+          ...prevDatos,
+          logo: archivo
+        }));
+      };
+      reader.readAsDataURL(archivo);
+    }
+  };
+
+  const eliminarLogo = () => {
+    setLogoPreview(null);
+    setDatosEmpresa(prevDatos => ({
+      ...prevDatos,
+      logo: null
+    }));
   };
 
   const handleArchivoChange = async (event) => {
@@ -422,6 +674,84 @@ const FacturasPage = () => {
     console.log('🗑️ Productos extraídos eliminados');
   };
 
+  // Función para iniciar edición de factura
+  const iniciarEdicionFactura = (factura) => {
+    console.log('✏️ Iniciando edición de factura:', factura.numeroFactura);
+    
+    // Cargar datos de la factura en el formulario
+    setNuevaFactura({
+      numeroFactura: factura.numeroFactura,
+      proveedor: factura.proveedor,
+      fecha: factura.fecha,
+      total: factura.total.toString(),
+      archivo: null, // No podemos recuperar el archivo original
+      productos: factura.productos.map(p => ({
+        ...p,
+        total: (p.cantidad * p.precioUnitario).toFixed(2)
+      }))
+    });
+    
+    setFacturaEditando(factura);
+    setMostrarFormulario(true);
+    setFacturaSeleccionada(null); // Cerrar modal de detalles si está abierto
+  };
+
+  // Función para cancelar edición
+  const cancelarEdicion = () => {
+    setFacturaEditando(null);
+    setNuevaFactura({
+      numeroFactura: '',
+      proveedor: '',
+      fecha: new Date().toISOString().split('T')[0],
+      total: '',
+      archivo: null,
+      productos: []
+    });
+    setMostrarFormulario(false);
+  };
+
+  // Función para eliminar factura
+  const eliminarFactura = async (factura) => {
+    if (!mostrarConfirmacionEliminar) {
+      setMostrarConfirmacionEliminar(factura);
+      return;
+    }
+
+    try {
+      setEliminandoFactura(true);
+      console.log('🗑️ Eliminando factura:', factura.numeroFactura);
+
+      // Confirmar que es el usuario correcto
+      if (factura.usuario !== usuario.email) {
+        throw new Error('No tienes permisos para eliminar esta factura');
+      }
+
+      // Eliminar de Firestore usando la función segura
+      await secureUpdateDoc('facturas', factura.id, { eliminada: true, fechaEliminacion: new Date().toISOString() });
+      
+      console.log('✅ Factura eliminada correctamente');
+      
+      // Actualizar la lista local
+      setFacturas(facturas.filter(f => f.id !== factura.id));
+      
+      alert(`✅ Factura ${factura.numeroFactura} eliminada correctamente.`);
+      
+    } catch (error) {
+      console.error('❌ Error eliminando factura:', error);
+      alert(`❌ Error al eliminar la factura: ${error.message}`);
+    } finally {
+      setEliminandoFactura(false);
+      setMostrarConfirmacionEliminar(null);
+    }
+  };
+
+  // Función para confirmar eliminación
+  const confirmarEliminacion = () => {
+    if (mostrarConfirmacionEliminar) {
+      eliminarFactura(mostrarConfirmacionEliminar);
+    }
+  };
+
   const subirFactura = async () => {
     if (!nuevaFactura.numeroFactura || !nuevaFactura.proveedor || nuevaFactura.productos.length === 0) {
       alert('❌ Por favor completa todos los campos obligatorios y agrega al menos un producto');
@@ -431,13 +761,16 @@ const FacturasPage = () => {
     try {
       setSubiendoFactura(true);
       setError('');
-      console.log('🚀 Iniciando guardado de factura...');
+      
+      const esEdicion = facturaEditando !== null;
+      console.log(esEdicion ? '✏️ Actualizando factura...' : '🚀 Creando nueva factura...');
       console.log('📋 Datos de la factura:', {
         numeroFactura: nuevaFactura.numeroFactura,
         proveedor: nuevaFactura.proveedor,
         productos: nuevaFactura.productos.length,
         total: nuevaFactura.total,
-        archivoUsadoParaAnalisis: nuevaFactura.archivo ? nuevaFactura.archivo.name : 'Ninguno'
+        archivoUsadoParaAnalisis: nuevaFactura.archivo ? nuevaFactura.archivo.name : 'Ninguno',
+        esEdicion
       });
 
       // IMPORTANTE: NO subir archivo - solo usarlo para análisis
@@ -471,10 +804,18 @@ const FacturasPage = () => {
       };
 
       console.log('💾 Datos a guardar:', facturaData);
-      console.log('💾 Guardando factura en Firestore...');
       
-      const docRef = await secureAddDoc('facturas', facturaData);
-      console.log('✅ Factura guardada con ID:', docRef.id);
+      let docRef;
+      if (esEdicion) {
+        console.log('💾 Actualizando factura existente...');
+        await secureUpdateDoc('facturas', facturaEditando.id, facturaData);
+        docRef = { id: facturaEditando.id };
+        console.log('✅ Factura actualizada con ID:', facturaEditando.id);
+      } else {
+        console.log('💾 Guardando nueva factura en Firestore...');
+        docRef = await secureAddDoc('facturas', facturaData);
+        console.log('✅ Factura guardada con ID:', docRef.id);
+      }
 
       // Actualizar stock de productos
       console.log('📦 Iniciando actualización de stock...');
@@ -508,7 +849,7 @@ const FacturasPage = () => {
       
       const productosActualizados = nuevaFactura.productos.length - productosNuevos;
 
-      alert(`✅ Factura guardada exitosamente!\n\n` +
+      alert(`✅ Factura ${esEdicion ? 'actualizada' : 'guardada'} exitosamente!\n\n` +
             `📊 Resumen:\n` +
             `• Número de factura: ${nuevaFactura.numeroFactura}\n` +
             `• Total: €${totalCalculado.toFixed(2)}\n` +
@@ -526,6 +867,7 @@ const FacturasPage = () => {
         archivo: null,
         productos: []
       });
+      setFacturaEditando(null); // Limpiar estado de edición
       setMostrarFormulario(false);
       
       // Recargar datos
@@ -951,6 +1293,13 @@ const FacturasPage = () => {
                 Crear Colección
               </button>
               <button
+                onClick={() => setMostrarConfiguracionEmpresa(true)}
+                className="flex items-center px-4 py-2 bg-emerald-600 text-white rounded-md hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              >
+                <Cog6ToothIcon className="h-5 w-5 mr-2" />
+                Configurar Empresa
+              </button>
+              <button
                 onClick={() => setMostrarFormulario(true)}
                 className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
@@ -974,9 +1323,11 @@ const FacturasPage = () => {
         {mostrarFormulario && (
           <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
             <div className="flex items-center justify-between mb-6">
-              <h2 className="text-xl font-semibold text-gray-900">Nueva Factura de Proveedor</h2>
+              <h2 className="text-xl font-semibold text-gray-900">
+                {facturaEditando ? `Editar Factura: ${facturaEditando.numeroFactura}` : 'Nueva Factura de Proveedor'}
+              </h2>
               <button
-                onClick={() => setMostrarFormulario(false)}
+                onClick={facturaEditando ? cancelarEdicion : () => setMostrarFormulario(false)}
                 className="text-gray-400 hover:text-gray-600"
               >
                 <XMarkIcon className="h-6 w-6" />
@@ -1248,7 +1599,7 @@ const FacturasPage = () => {
             {/* Botones de acción */}
             <div className="flex justify-end space-x-3 mt-6 pt-6 border-t">
               <button
-                onClick={() => setMostrarFormulario(false)}
+                onClick={facturaEditando ? cancelarEdicion : () => setMostrarFormulario(false)}
                 className="px-4 py-2 text-gray-700 bg-gray-200 rounded-md hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-500"
               >
                 Cancelar
@@ -1265,12 +1616,12 @@ const FacturasPage = () => {
                 {subiendoFactura ? (
                   <>
                     <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
-                    Guardando...
+                    {facturaEditando ? 'Actualizando...' : 'Guardando...'}
                   </>
                 ) : (
                   <>
                     <CloudArrowUpIcon className="h-5 w-5 mr-2" />
-                    Guardar Factura ({nuevaFactura.productos.length} productos)
+                    {facturaEditando ? `Actualizar Factura` : `Guardar Factura`} ({nuevaFactura.productos.length} productos)
                   </>
                 )}
               </button>
@@ -1292,7 +1643,8 @@ const FacturasPage = () => {
                 <h3 className="text-lg font-medium text-gray-900 mb-2">No hay facturas registradas</h3>
                 <p className="text-gray-600">Comienza subiendo tu primera factura de proveedor</p>
               </div>
-            ) : (
+            ) :
+            (
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
@@ -1367,22 +1719,47 @@ const FacturasPage = () => {
                         </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                        <button
-                          onClick={() => verFactura(factura)}
-                          className="text-blue-600 hover:text-blue-900 mr-3"
-                        >
-                          <EyeIcon className="h-5 w-5" />
-                        </button>
-                        {factura.archivoUrl && (
-                          <a
-                            href={factura.archivoUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-gray-600 hover:text-gray-900"
+                        <div className="flex items-center space-x-2">
+                          <button
+                            onClick={() => verFactura(factura)}
+                            className="text-blue-600 hover:text-blue-900 p-1 rounded"
+                            title="Ver detalles"
                           >
-                            <DocumentTextIcon className="h-5 w-5" />
-                          </a>
-                        )}
+                            <EyeIcon className="h-5 w-5" />
+                          </button>
+                          <button
+                            onClick={() => iniciarEdicionFactura(factura)}
+                            className="text-green-600 hover:text-green-900 p-1 rounded"
+                            title="Editar factura"
+                          >
+                            <PencilIcon className="h-5 w-5" />
+                          </button>
+                          <button
+                            onClick={() => setMostrarConfirmacionEliminar(factura)}
+                            className="text-red-600 hover:text-red-900 p-1 rounded"
+                            title="Eliminar factura"
+                          >
+                            <TrashIcon className="h-5 w-5" />
+                          </button>
+                          <button
+                            onClick={() => generarFacturaPDF(factura)}
+                            className="text-purple-600 hover:text-purple-900 p-1 rounded"
+                            title="Descargar PDF"
+                          >
+                            <DocumentArrowDownIcon className="h-5 w-5" />
+                          </button>
+                          {factura.archivoUrl && (
+                            <a
+                              href={factura.archivoUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-gray-600 hover:text-gray-900 p-1 rounded"
+                              title="Ver archivo original"
+                            >
+                              <DocumentTextIcon className="h-5 w-5" />
+                            </a>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -1446,6 +1823,357 @@ const FacturasPage = () => {
                 >
                   Cerrar
                 </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Modal de configuración de empresa */}
+        {mostrarConfiguracionEmpresa && (
+          <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+            <div className="relative top-10 mx-auto p-5 border w-11/12 max-w-4xl shadow-lg rounded-md bg-white">
+              <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center">
+                  <BuildingStorefrontIcon className="h-8 w-8 text-emerald-600 mr-3" />
+                  <h3 className="text-xl font-semibold text-gray-900">
+                    Configuración de Empresa
+                  </h3>
+                </div>
+                <button
+                  onClick={() => setMostrarConfiguracionEmpresa(false)}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <XMarkIcon className="h-6 w-6" />
+                </button>
+              </div>
+              
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                {/* Información básica */}
+                <div className="space-y-4">
+                  <h4 className="text-lg font-medium text-gray-900 flex items-center">
+                    <IdentificationIcon className="h-5 w-5 mr-2 text-emerald-600" />
+                    Información Básica
+                  </h4>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Nombre de la Empresa *
+                    </label>
+                    <input
+                      type="text"
+                      value={datosEmpresa.nombre}
+                      onChange={(e) => setDatosEmpresa({...datosEmpresa, nombre: e.target.value})}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      placeholder="Mi Empresa S.L."
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Dirección
+                    </label>
+                    <input
+                      type="text"
+                      value={datosEmpresa.direccion}
+                      onChange={(e) => setDatosEmpresa({...datosEmpresa, direccion: e.target.value})}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      placeholder="Calle Principal 123"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Ciudad
+                      </label>
+                      <input
+                        type="text"
+                        value={datosEmpresa.ciudad}
+                        onChange={(e) => setDatosEmpresa({...datosEmpresa, ciudad: e.target.value})}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                        placeholder="Madrid"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Código Postal
+                      </label>
+                      <input
+                        type="text"
+                        value={datosEmpresa.codigoPostal}
+                        onChange={(e) => setDatosEmpresa({...datosEmpresa, codigoPostal: e.target.value})}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                        placeholder="28001"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      <PhoneIcon className="h-4 w-4 inline mr-1" />
+                      Teléfono
+                    </label>
+                    <input
+                      type="text"
+                      value={datosEmpresa.telefono}
+                      onChange={(e) => setDatosEmpresa({...datosEmpresa, telefono: e.target.value})}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      placeholder="+34 123 456 789"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      <EnvelopeIcon className="h-4 w-4 inline mr-1" />
+                      Email
+                    </label>
+                    <input
+                      type="email"
+                      value={datosEmpresa.email}
+                      onChange={(e) => setDatosEmpresa({...datosEmpresa, email: e.target.value})}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      placeholder="info@miempresa.com"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      <GlobeAltIcon className="h-4 w-4 inline mr-1" />
+                      Sitio Web
+                    </label>
+                    <input
+                      type="text"
+                      value={datosEmpresa.web}
+                      onChange={(e) => setDatosEmpresa({...datosEmpresa, web: e.target.value})}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      placeholder="www.miempresa.com"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      CIF/NIF
+                    </label>
+                    <input
+                      type="text"
+                      value={datosEmpresa.cif}
+                      onChange={(e) => setDatosEmpresa({...datosEmpresa, cif: e.target.value})}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      placeholder="B-12345678"
+                    />
+                  </div>
+                </div>
+
+                {/* Personalización y logo */}
+                <div className="space-y-4">
+                  <h4 className="text-lg font-medium text-gray-900 flex items-center">
+                    <PaintBrushIcon className="h-5 w-5 mr-2 text-emerald-600" />
+                    Personalización
+                  </h4>
+
+                  {/* Logo */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      <PhotoIcon className="h-4 w-4 inline mr-1" />
+                      Logo de la Empresa
+                    </label>
+                    
+                    {logoPreview ? (
+                      <div className="relative">
+                        <img
+                          src={logoPreview}
+                          alt="Logo preview"
+                          className="w-32 h-32 object-contain border border-gray-300 rounded-lg mb-2"
+                        />
+                        <button
+                          onClick={eliminarLogo}
+                          className="absolute top-0 right-0 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs hover:bg-red-600"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="w-32 h-32 border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center mb-2">
+                        <PhotoIcon className="h-8 w-8 text-gray-400" />
+                      </div>
+                    )}
+                    
+                    <input
+                      type="file"
+                      onChange={handleLogoChange}
+                      accept="image/*"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      Formatos: JPG, PNG. Máximo 2MB. Recomendado: 300x300px
+                    </p>
+                  </div>
+
+                  {/* Colores */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Color Primario
+                      </label>
+                      <div className="flex items-center space-x-2">
+                        <input
+                          type="color"
+                          value={datosEmpresa.colorPrimario}
+                          onChange={(e) => setDatosEmpresa({...datosEmpresa, colorPrimario: e.target.value})}
+                          className="w-12 h-10 border border-gray-300 rounded cursor-pointer"
+                        />
+                        <input
+                          type="text"
+                          value={datosEmpresa.colorPrimario}
+                          onChange={(e) => setDatosEmpresa({...datosEmpresa, colorPrimario: e.target.value})}
+                          className="flex-1 px-2 py-1 text-sm border border-gray-300 rounded"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Color Secundario
+                      </label>
+                      <div className="flex items-center space-x-2">
+                        <input
+                          type="color"
+                          value={datosEmpresa.colorSecundario}
+                          onChange={(e) => setDatosEmpresa({...datosEmpresa, colorSecundario: e.target.value})}
+                          className="w-12 h-10 border border-gray-300 rounded cursor-pointer"
+                        />
+                        <input
+                          type="text"
+                          value={datosEmpresa.colorSecundario}
+                          onChange={(e) => setDatosEmpresa({...datosEmpresa, colorSecundario: e.target.value})}
+                          className="flex-1 px-2 py-1 text-sm border border-gray-300 rounded"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Preview de colores */}
+                  <div className="bg-gray-50 p-4 rounded-lg">
+                    <p className="text-sm font-medium text-gray-700 mb-2">Vista previa:</p>
+                    <div 
+                      className="p-3 rounded text-white text-sm font-medium mb-2"
+                      style={{ backgroundColor: datosEmpresa.colorPrimario }}
+                    >
+                      Encabezado con color primario
+                    </div>
+                    <div 
+                      className="p-2 rounded text-white text-xs"
+                      style={{ backgroundColor: datosEmpresa.colorSecundario }}
+                    >
+                      Texto con color secundario
+                    </div>
+                  </div>
+
+                  {/* Pie de factura */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      <DocumentDuplicateIcon className="h-4 w-4 inline mr-1" />
+                      Mensaje del pie de factura
+                    </label>
+                    <textarea
+                      value={datosEmpresa.pieFactura}
+                      onChange={(e) => setDatosEmpresa({...datosEmpresa, pieFactura: e.target.value})}
+                      rows="3"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      placeholder="Gracias por confiar en nosotros"
+                    />
+                  </div>
+
+                  {/* Opciones adicionales */}
+                  <div className="space-y-3">
+                    <div className="flex items-center">
+                      <input
+                        type="checkbox"
+                        checked={datosEmpresa.mostrarLogo}
+                        onChange={(e) => setDatosEmpresa({...datosEmpresa, mostrarLogo: e.target.checked})}
+                        className="mr-3"
+                      />
+                      <span className="text-sm text-gray-700">Mostrar logo en facturas</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="flex justify-end space-x-3 mt-8 pt-6 border-t">
+                <button
+                  onClick={() => setMostrarConfiguracionEmpresa(false)}
+                  className="px-4 py-2 text-gray-700 bg-gray-200 rounded-md hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-500"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={guardarConfiguracionEmpresa}
+                  disabled={guardandoConfiguracion}
+                  className={`flex items-center px-4 py-2 rounded-md focus:outline-none focus:ring-2 ${
+                    guardandoConfiguracion
+                      ? 'bg-gray-400 text-gray-700 cursor-not-allowed'
+                      : 'bg-emerald-600 text-white hover:bg-emerald-700 focus:ring-emerald-500'
+                  }`}
+                >
+                  {guardandoConfiguracion ? (
+                    <>
+                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
+                      Guardando...
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircleIcon className="h-5 w-5 mr-2" />
+                      Guardar Configuración
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Modal de confirmación de eliminación */}
+        {mostrarConfirmacionEliminar && (
+          <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+            <div className="relative top-1/2 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white transform -translate-y-1/2">
+              <div className="text-center">
+                <ExclamationTriangleIcon className="h-12 w-12 text-red-600 mx-auto mb-4" />
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                  Confirmar Eliminación
+                </h3>
+                <p className="text-gray-600 mb-6">
+                  ¿Estás seguro de que quieres eliminar la factura "{mostrarConfirmacionEliminar.numeroFactura}"?
+                  Esta acción no se puede deshacer.
+                </p>
+                
+                <div className="flex justify-center space-x-3">
+                  <button
+                    onClick={() => setMostrarConfirmacionEliminar(null)}
+                    className="px-4 py-2 text-gray-700 bg-gray-200 rounded-md hover:bg-gray-300"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={confirmarEliminacion}
+                    disabled={eliminandoFactura}
+                    className={`flex items-center px-4 py-2 rounded-md ${
+                      eliminandoFactura
+                        ? 'bg-gray-400 text-gray-700 cursor-not-allowed'
+                        : 'bg-red-600 text-white hover:bg-red-700'
+                    }`}
+                  >
+                    {eliminandoFactura ? (
+                      <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                        Eliminando...
+                      </>
+                    ) : (
+                      <>
+                        <TrashIcon className="h-4 w-4 mr-2" />
+                        Eliminar
+                      </>
+                    )}
+                  </button>
+                </div>
               </div>
             </div>
           </div>
